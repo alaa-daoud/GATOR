@@ -19,6 +19,12 @@ source .venv/bin/activate
 poetry install --with dev
 ```
 
+Optional visualization extras:
+
+```bash
+poetry install --with dev --extras "viz"
+```
+
 If Poetry is unavailable, install with pip:
 
 ```bash
@@ -49,6 +55,17 @@ src/traffic_risk/
 - Use fixed seed values (see TODOs in `utils/config.py`).
 - Pin dependencies via Poetry lockfile (`poetry.lock`).
 - Capture run configuration and software versions in exports.
+
+## System dependencies
+
+- OpenCV wheels include most codecs, but for full video IO support install FFmpeg:
+  - macOS (Homebrew): `brew install ffmpeg`
+  - Ubuntu/Debian: `sudo apt-get install -y ffmpeg`
+
+## Constraints
+
+- GPU is optional. The default pipeline should run on CPU, with GPU acceleration used
+  only when available and configured.
 
 ## Development workflow
 
