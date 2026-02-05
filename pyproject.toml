@@ -1,0 +1,76 @@
+[project]
+name = "traffic-risk"
+version = "0.1.0"
+description = "Visual feature extraction + vehicle tracking from traffic videos (sub-project 1)."
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [
+  { name = "Your Team", email = "team@example.com" }
+]
+license = { text = "Proprietary" }
+keywords = ["traffic", "tracking", "yolov8", "features", "vision"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "License :: Other/Proprietary License",
+  "Operating System :: OS Independent"
+]
+
+dependencies = [
+  "numpy>=1.26",
+  "opencv-python>=4.9",
+  "pandas>=2.2",
+  "pyarrow>=15.0",
+  "pydantic>=2.7",
+  "pyyaml>=6.0",
+  "rich>=13.7",
+  "ultralytics>=8.2",
+]
+
+[project.optional-dependencies]
+dev = [
+  "black>=24.3",
+  "mypy>=1.10",
+  "pre-commit>=3.7",
+  "pytest>=8.2",
+  "ruff>=0.5",
+  "types-PyYAML>=6.0",
+]
+
+[project.scripts]
+traffic-risk = "traffic_risk.cli:main"
+
+[tool.poetry]
+package-mode = false
+
+[build-system]
+requires = ["poetry-core>=1.9.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 88
+preview = true
+
+target-version = ["py311"]
+
+[tool.ruff]
+line-length = 88
+
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.11"
+warn_unused_configs = true
+warn_return_any = true
+warn_unused_ignores = true
+no_implicit_optional = true
+strict = true
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+addopts = "-ra -q"
+testpaths = ["tests"]
