@@ -4,9 +4,7 @@ from __future__ import annotations
 
 from typing import Iterator
 
-import pytest
-
-np = pytest.importorskip("numpy")
+import numpy as np
 
 from traffic_risk.perception.detect_yolo import detect_frames
 

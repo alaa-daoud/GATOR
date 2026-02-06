@@ -118,6 +118,12 @@ Expected outputs:
 - `annotated_frames/frame_*.jpg`
 - `annotated.mp4` (when `--make-video true`)
 
+
+### Dependency note for tests
+
+Core tests require project runtime dependencies (`numpy`, `pandas`, `pyyaml`, `opencv-python`).
+If these are missing, test execution should fail during import/setup rather than silently skip.
+
 ## Development workflow
 
 Common commands:
