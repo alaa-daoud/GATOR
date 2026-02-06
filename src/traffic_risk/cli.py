@@ -3,20 +3,28 @@
 from __future__ import annotations
 
 import argparse
+import logging
 from pathlib import Path
 
 import pandas as pd
 
-from traffic_risk.features.extract import export_features, run_feature_extraction
+from traffic_risk.features.extract import (
+    export_features,
+    extract_features_from_tracked_frames,
+    run_feature_extraction,
+)
+from traffic_risk.features.visibility import frame_luminance_bgr
 from traffic_risk.io.dataset_registry import list_videos
 from traffic_risk.io.video_reader import iter_frames
 from traffic_risk.perception.detect_yolo import DEFAULT_CLASSES, detect_frames
 from traffic_risk.perception.track import TrackedFrame, track_detections
 from traffic_risk.perception.types import Detection, DetectionFrame
 from traffic_risk.utils.config import PipelineSettings, load_config
+from traffic_risk.utils.logging import configure_logging
 from traffic_risk.viz.overlays import render_annotated_outputs
 from traffic_risk.viz.plots import load_features_table, plot_feature_summaries
-from traffic_risk.utils.logging import configure_logging
+
+LOGGER = logging.getLogger(__name__)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -138,6 +146,31 @@ def build_parser() -> argparse.ArgumentParser:
     )
     viz_parser.add_argument("--sample-every", type=int, default=1)
 
+    run_parser = subparsers.add_parser(
+        "run", help="End-to-end run: detect, track, extract, export, and visualize"
+    )
+    run_parser.add_argument("--video", required=True, help="Path to source video.")
+    run_parser.add_argument("--outdir", required=True, help="Output directory.")
+    run_parser.add_argument("--sample-every", type=int, default=2)
+    run_parser.add_argument("--conf", type=float, default=0.25)
+    run_parser.add_argument("--iou", type=float, default=0.45)
+    run_parser.add_argument("--model", default="yolov8n.pt")
+    run_parser.add_argument(
+        "--format",
+        choices=["csv", "parquet", "both"],
+        default="both",
+        help="Feature export format.",
+    )
+    run_parser.add_argument("--cache-path", default=None, help="Optional detection cache path.")
+    run_parser.add_argument(
+        "--annotated-video",
+        choices=["true", "false"],
+        default="false",
+        help="Render annotated video and frames.",
+    )
+    run_parser.add_argument("--iou-threshold", type=float, default=0.3)
+    run_parser.add_argument("--max-age", type=int, default=10)
+
     return parser
 
 
@@ -199,6 +232,102 @@ def _load_detection_frames(path: Path) -> list[DetectionFrame]:
             )
         )
     return frames
+
+
+def _run_end_to_end(args: argparse.Namespace, config: dict[str, object]) -> None:
+    video_cfg = config.get("video", {}) if isinstance(config, dict) else {}
+    model_cfg = config.get("model", {}) if isinstance(config, dict) else {}
+    tracking_cfg = config.get("tracking", {}) if isinstance(config, dict) else {}
+
+    video_path = args.video or video_cfg.get("input_path")
+    if not video_path:
+        raise ValueError("--video is required")
+    outdir = Path(args.outdir)
+    outdir.mkdir(parents=True, exist_ok=True)
+
+    sample_every = args.sample_every
+    conf = args.conf if args.conf is not None else float(model_cfg.get("confidence", 0.25))
+    iou = args.iou if args.iou is not None else float(model_cfg.get("iou", 0.45))
+    model = args.model or str(model_cfg.get("yolo_weights", "yolov8n.pt"))
+    iou_threshold = args.iou_threshold if args.iou_threshold is not None else 0.3
+    max_age = args.max_age if args.max_age is not None else int(tracking_cfg.get("max_age", 10))
+
+    LOGGER.info("[run] reading frames: %s", video_path)
+    sampled_frames = list(iter_frames(video_path, sample_every=sample_every))
+    LOGGER.info("[run] sampled frames: %d", len(sampled_frames))
+
+    visibility = {
+        frame_idx: frame_luminance_bgr(frame) for frame_idx, _timestamp, frame in sampled_frames
+    }
+
+    class _FrameSource:
+        def __init__(self) -> None:
+            self.video_path = str(video_path)
+            self.sample_every = sample_every
+            self.class_whitelist = list(DEFAULT_CLASSES)
+            self.cache_path = args.cache_path
+
+        def __iter__(self):
+            return iter(sampled_frames)
+
+    LOGGER.info("[run] running detection (model=%s, conf=%.2f, iou=%.2f)", model, conf, iou)
+    detection_frames = list(detect_frames(model, _FrameSource(), conf=conf, iou=iou))
+    LOGGER.info("[run] detection frames: %d", len(detection_frames))
+
+    detections_out = outdir / "detections.parquet"
+    pd.DataFrame([_serialize_detection_frame(frame) for frame in detection_frames]).to_parquet(
+        detections_out, index=False
+    )
+    LOGGER.info("[run] detections saved: %s", detections_out)
+
+    LOGGER.info("[run] tracking (iou_threshold=%.2f, max_age=%d)", iou_threshold, max_age)
+    tracked_frames = list(
+        track_detections(detection_frames, iou_threshold=iou_threshold, max_age=max_age)
+    )
+    tracked_out = outdir / "tracked.parquet"
+    pd.DataFrame([_serialize_tracked_frame(frame) for frame in tracked_frames]).to_parquet(
+        tracked_out, index=False
+    )
+    LOGGER.info("[run] tracks saved: %s", tracked_out)
+
+    fps = 0.0
+    if len(sampled_frames) >= 2:
+        dt = sampled_frames[1][1] - sampled_frames[0][1]
+        fps = (1.0 / dt) if dt > 0 else 0.0
+
+    LOGGER.info("[run] extracting features")
+    features = extract_features_from_tracked_frames(
+        tracked_frames,
+        visibility,
+        video_id=Path(video_path).stem,
+        fps=fps,
+        sample_every=sample_every,
+    )
+    exported = export_features(
+        features,
+        outdir=outdir,
+        video_id=Path(video_path).stem,
+        file_format=args.format,
+    )
+    for path in exported:
+        LOGGER.info("[run] feature file: %s", path)
+
+    LOGGER.info("[run] generating plots")
+    plot_paths = plot_feature_summaries(features, outdir=outdir)
+    for path in plot_paths:
+        LOGGER.info("[run] plot: %s", path)
+
+    if args.annotated_video.lower() == "true":
+        LOGGER.info("[run] rendering annotations")
+        outputs = render_annotated_outputs(
+            video_path=video_path,
+            tracks_path=tracked_out,
+            outdir=outdir,
+            sample_every=sample_every,
+            make_video=True,
+        )
+        for path in outputs:
+            LOGGER.info("[run] annotation output: %s", path)
 
 
 def main() -> None:
@@ -314,7 +443,10 @@ def main() -> None:
             raise ValueError("--tracks is required when --make-video true to draw boxes and track ids.")
         return
 
-    # TODO: wire up video ingestion, detection, tracking, and feature extraction.
+    if args.command == "run":
+        _run_end_to_end(args, config)
+        return
+
     print("Loaded config:", config)
 
 

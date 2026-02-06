@@ -37,6 +37,16 @@ pip install -r requirements.txt
 python -m traffic_risk --help
 ```
 
+
+### 4) Run end-to-end pipeline
+
+```bash
+python -m traffic_risk run --video ./data/raw/sample.mp4 --outdir ./data/processed/run1 --sample-every 2 --conf 0.25
+```
+
+This command runs detection, tracking, feature extraction, exports CSV/Parquet, and generates summary plots.
+Use `--annotated-video true` to also render an annotated video/frames.
+
 ## Project structure
 
 ```
