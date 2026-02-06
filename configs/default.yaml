@@ -1,0 +1,27 @@
+# Default configuration for traffic risk pipeline
+
+seed: 42
+
+video:
+  input_path: "./data/raw/sample.mp4"
+  fps: null
+  sample_every: 2
+
+model:
+  yolo_weights: "yolov8n.pt"
+  confidence: 0.25
+  iou: 0.45
+
+tracking:
+  method: "iou_greedy"
+  iou_threshold: 0.3
+  max_age: 10
+
+features:
+  formats: ["parquet", "csv"]
+
+viz:
+  make_video: false
+
+runtime:
+  cache_path: null
