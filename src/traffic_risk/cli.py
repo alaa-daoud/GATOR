@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from traffic_risk.features.extract import export_features, run_feature_extraction
 from traffic_risk.io.dataset_registry import list_videos
 from traffic_risk.io.video_reader import iter_frames
 from traffic_risk.perception.detect_yolo import DEFAULT_CLASSES, detect_frames
@@ -99,6 +100,22 @@ def build_parser() -> argparse.ArgumentParser:
     track_parser.add_argument("--out", required=True, help="Output tracked frames parquet file.")
     track_parser.add_argument("--iou-threshold", type=float, default=0.3)
     track_parser.add_argument("--max-age", type=int, default=10)
+
+    extract_parser = subparsers.add_parser(
+        "extract", help="Extract frame-level traffic features from a video"
+    )
+    extract_parser.add_argument("--video", required=True, help="Path to a video file.")
+    extract_parser.add_argument("--outdir", required=True, help="Output directory for features.")
+    extract_parser.add_argument("--sample-every", type=int, default=2)
+    extract_parser.add_argument(
+        "--format",
+        choices=["csv", "parquet", "both"],
+        default="both",
+        help="Export format.",
+    )
+    extract_parser.add_argument("--model", default="yolov8n.pt")
+    extract_parser.add_argument("--conf", type=float, default=0.25)
+    extract_parser.add_argument("--iou", type=float, default=0.45)
 
     return parser
 
@@ -232,6 +249,24 @@ def main() -> None:
         rows = [_serialize_tracked_frame(frame) for frame in tracked]
         output_path.parent.mkdir(parents=True, exist_ok=True)
         pd.DataFrame(rows).to_parquet(output_path, index=False)
+        return
+
+    if args.command == "extract":
+        table = run_feature_extraction(
+            args.video,
+            model=args.model,
+            conf=args.conf,
+            iou=args.iou,
+            sample_every=args.sample_every,
+        )
+        outputs = export_features(
+            table,
+            outdir=args.outdir,
+            video_id=Path(args.video).stem,
+            file_format=args.format,
+        )
+        for output in outputs:
+            print(output)
         return
 
     # TODO: wire up video ingestion, detection, tracking, and feature extraction.

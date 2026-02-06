@@ -74,6 +74,18 @@ src/traffic_risk/
 - Handles short occlusions by keeping unmatched tracks alive for `max_age` frames.
 - No motion model/Kalman filtering yet, so identity switches may occur in dense scenes.
 
+
+## Feature extraction
+
+Extract per-frame features (vehicle count, speed, spacing, luminance):
+
+```bash
+python -m traffic_risk extract --video ./data/raw/sample.mp4 --outdir ./data/processed --sample-every 2 --format both
+```
+
+Outputs are written with stable schema/order to CSV and/or Parquet:
+`video_id, frame_idx, timestamp_s, vehicle_count, mean_speed_px_s, min_distance_px, visibility_luma, fps, sample_every`.
+
 ## Development workflow
 
 Common commands:
