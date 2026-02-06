@@ -14,6 +14,8 @@ from traffic_risk.perception.detect_yolo import DEFAULT_CLASSES, detect_frames
 from traffic_risk.perception.track import TrackedFrame, track_detections
 from traffic_risk.perception.types import Detection, DetectionFrame
 from traffic_risk.utils.config import PipelineSettings, load_config
+from traffic_risk.viz.overlays import render_annotated_outputs
+from traffic_risk.viz.plots import load_features_table, plot_feature_summaries
 from traffic_risk.utils.logging import configure_logging
 
 
@@ -116,6 +118,25 @@ def build_parser() -> argparse.ArgumentParser:
     extract_parser.add_argument("--model", default="yolov8n.pt")
     extract_parser.add_argument("--conf", type=float, default=0.25)
     extract_parser.add_argument("--iou", type=float, default=0.45)
+
+    viz_parser = subparsers.add_parser(
+        "viz", help="Generate annotated outputs and feature plots"
+    )
+    viz_parser.add_argument("--video", required=True, help="Path to source video.")
+    viz_parser.add_argument("--features", required=True, help="Feature table path (.parquet/.csv).")
+    viz_parser.add_argument("--outdir", required=True, help="Directory for visualization outputs.")
+    viz_parser.add_argument(
+        "--make-video",
+        choices=["true", "false"],
+        default="true",
+        help="Whether to render annotated mp4.",
+    )
+    viz_parser.add_argument(
+        "--tracks",
+        default=None,
+        help="Tracked detections path (.parquet/.pkl) for drawing boxes/labels.",
+    )
+    viz_parser.add_argument("--sample-every", type=int, default=1)
 
     return parser
 
@@ -267,6 +288,30 @@ def main() -> None:
         )
         for output in outputs:
             print(output)
+        return
+
+    if args.command == "viz":
+        output_dir = Path(args.outdir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        features = load_features_table(args.features)
+        plot_paths = plot_feature_summaries(features, outdir=output_dir)
+        for path in plot_paths:
+            print(path)
+
+        make_video = args.make_video.lower() == "true"
+        if args.tracks:
+            overlay_outputs = render_annotated_outputs(
+                video_path=args.video,
+                tracks_path=args.tracks,
+                outdir=output_dir,
+                sample_every=args.sample_every,
+                make_video=make_video,
+            )
+            for path in overlay_outputs:
+                print(path)
+        elif make_video:
+            raise ValueError("--tracks is required when --make-video true to draw boxes and track ids.")
         return
 
     # TODO: wire up video ingestion, detection, tracking, and feature extraction.

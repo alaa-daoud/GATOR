@@ -86,6 +86,28 @@ python -m traffic_risk extract --video ./data/raw/sample.mp4 --outdir ./data/pro
 Outputs are written with stable schema/order to CSV and/or Parquet:
 `video_id, frame_idx, timestamp_s, vehicle_count, mean_speed_px_s, min_distance_px, visibility_luma, fps, sample_every`.
 
+
+## Visualization
+
+Generate plots from extracted features and optionally render annotated frames/video
+(using tracked detections):
+
+```bash
+python -m traffic_risk viz \
+  --video ./data/raw/sample.mp4 \
+  --features ./data/processed/sample_features.parquet \
+  --tracks ./data/processed/sample_tracked.parquet \
+  --outdir ./data/processed/viz \
+  --make-video true
+```
+
+Expected outputs:
+- `speed_over_time.png`
+- `visibility_histogram.png`
+- `vehicle_count_over_time.png`
+- `annotated_frames/frame_*.jpg`
+- `annotated.mp4` (when `--make-video true`)
+
 ## Development workflow
 
 Common commands:
