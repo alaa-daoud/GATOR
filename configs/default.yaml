@@ -1,0 +1,20 @@
+# Default configuration for traffic risk pipeline
+# TODO: define model weights, tracking parameters, and feature flags.
+
+seed: 42
+video:
+  input_path: "./data/raw/sample.mp4"
+  fps: null
+
+model:
+  yolo_weights: "yolov8n.pt"
+  confidence: 0.25
+  iou: 0.45
+
+tracking:
+  method: "bytetrack"
+  max_age: 30
+
+export:
+  output_dir: "./data/processed"
+  formats: ["parquet", "csv"]

@@ -1,0 +1,5 @@
+# Dataset registry mapping
+# Use absolute or relative paths; paths can be overridden per environment.
+
+datasets:
+  sample: "./data/raw"
