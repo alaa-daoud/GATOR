@@ -127,19 +127,19 @@ def main() -> None:
         return
 
     if args.command == "detect":
-        frames_iter = iter_frames(
-            args.video,
-            sample_every=args.sample_every,
-        )
-        setattr(frames_iter, "video_path", args.video)
-        setattr(frames_iter, "sample_every", args.sample_every)
-        setattr(
-            frames_iter,
-            "class_whitelist",
-            [name.strip() for name in args.classes.split(",") if name.strip()],
-        )
-        if args.cache_path:
-            setattr(frames_iter, "cache_path", args.cache_path)
+        class _FrameSource:
+            def __init__(self) -> None:
+                self.video_path = args.video
+                self.sample_every = args.sample_every
+                self.class_whitelist = [
+                    name.strip() for name in args.classes.split(",") if name.strip()
+                ]
+                self.cache_path = args.cache_path
+
+            def __iter__(self):
+                return iter_frames(self.video_path, sample_every=self.sample_every)
+
+        frames_iter = _FrameSource()
 
         detections = list(
             detect_frames(
