@@ -1,19 +1,42 @@
-"""Tracking integration utilities."""
+"""Lightweight multi-object tracking utilities."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Iterable, Iterator
 
-from traffic_risk.perception.types import Detection
+from traffic_risk.perception.types import Detection, DetectionFrame
 
 
 @dataclass(frozen=True)
-class Track:
-    """Track state for a single object."""
+class TrackState:
+    """Internal state for an active track."""
 
     track_id: int
-    detection: Detection
-    age: int = 0
+    last_bbox: tuple[float, float, float, float]
+    last_seen_frame: int
+    age: int
+    hit_count: int
+
+
+@dataclass(frozen=True)
+class TrackedDetection:
+    """A detection associated with a track id."""
+
+    track_id: int
+    bbox_xyxy: tuple[float, float, float, float]
+    confidence: float
+    class_id: int
+    class_name: str
+
+
+@dataclass(frozen=True)
+class TrackedFrame:
+    """Tracked detections for a frame."""
+
+    frame_idx: int
+    timestamp: float
+    detections: list[TrackedDetection]
 
 
 def _iou(
@@ -36,51 +59,120 @@ def _iou(
     area_a = max(0.0, ax2 - ax1) * max(0.0, ay2 - ay1)
     area_b = max(0.0, bx2 - bx1) * max(0.0, by2 - by1)
     union = area_a + area_b - inter_area
-    if union == 0:
+    if union <= 0:
         return 0.0
     return inter_area / union
 
 
-def update_tracks(
+def _greedy_match(
+    tracks: list[TrackState],
     detections: list[Detection],
-    previous_tracks: list[Track] | None = None,
+    iou_threshold: float,
+) -> tuple[list[tuple[int, int]], set[int], set[int]]:
+    """Greedy IoU matching between existing tracks and current detections."""
+    candidate_pairs: list[tuple[float, int, int]] = []
+    for track_idx, track in enumerate(tracks):
+        for det_idx, detection in enumerate(detections):
+            score = _iou(track.last_bbox, detection.bbox_xyxy)
+            if score >= iou_threshold:
+                candidate_pairs.append((score, track_idx, det_idx))
+
+    candidate_pairs.sort(key=lambda item: item[0], reverse=True)
+
+    matches: list[tuple[int, int]] = []
+    used_tracks: set[int] = set()
+    used_dets: set[int] = set()
+    for _score, track_idx, det_idx in candidate_pairs:
+        if track_idx in used_tracks or det_idx in used_dets:
+            continue
+        used_tracks.add(track_idx)
+        used_dets.add(det_idx)
+        matches.append((track_idx, det_idx))
+
+    unmatched_tracks = set(range(len(tracks))) - used_tracks
+    unmatched_dets = set(range(len(detections))) - used_dets
+    return matches, unmatched_tracks, unmatched_dets
+
+
+def track_detections(
+    detection_frames_iter: Iterable[DetectionFrame],
     iou_threshold: float = 0.3,
-) -> list[Track]:
-    """Update tracking state using greedy IoU association.
+    max_age: int = 10,
+) -> Iterator[TrackedFrame]:
+    """Track detections frame-to-frame with greedy IoU matching.
 
-    TODO: Add Kalman filtering for motion prediction.
+    Tracks persist for up to ``max_age`` missed frames to handle short occlusions.
     """
-    if previous_tracks is None:
-        return [Track(track_id=index, detection=det) for index, det in enumerate(detections)]
+    active_tracks: dict[int, TrackState] = {}
+    next_track_id = 0
 
-    used_detections: set[int] = set()
-    updated_tracks: list[Track] = []
-    next_id = max((track.track_id for track in previous_tracks), default=-1) + 1
+    for frame in detection_frames_iter:
+        track_list = list(active_tracks.values())
+        matches, unmatched_tracks, unmatched_dets = _greedy_match(
+            track_list, frame.detections, iou_threshold
+        )
 
-    for track in previous_tracks:
-        best_iou = 0.0
-        best_idx: int | None = None
-        for idx, det in enumerate(detections):
-            if idx in used_detections:
-                continue
-            iou_score = _iou(track.detection.bbox_xyxy, det.bbox_xyxy)
-            if iou_score > best_iou:
-                best_iou = iou_score
-                best_idx = idx
+        updated_tracks: dict[int, TrackState] = {}
+        tracked_detections: list[TrackedDetection] = []
 
-        if best_idx is not None and best_iou >= iou_threshold:
-            used_detections.add(best_idx)
-            updated_tracks.append(
-                Track(track_id=track.track_id, detection=detections[best_idx], age=0)
+        for track_idx, det_idx in matches:
+            track = track_list[track_idx]
+            detection = frame.detections[det_idx]
+            new_state = TrackState(
+                track_id=track.track_id,
+                last_bbox=detection.bbox_xyxy,
+                last_seen_frame=frame.frame_idx,
+                age=0,
+                hit_count=track.hit_count + 1,
             )
-        else:
-            updated_tracks.append(
-                Track(track_id=track.track_id, detection=track.detection, age=track.age + 1)
+            updated_tracks[new_state.track_id] = new_state
+            tracked_detections.append(
+                TrackedDetection(
+                    track_id=new_state.track_id,
+                    bbox_xyxy=detection.bbox_xyxy,
+                    confidence=detection.confidence,
+                    class_id=detection.class_id,
+                    class_name=detection.class_name,
+                )
             )
 
-    for idx, det in enumerate(detections):
-        if idx not in used_detections:
-            updated_tracks.append(Track(track_id=next_id, detection=det))
-            next_id += 1
+        for track_idx in unmatched_tracks:
+            track = track_list[track_idx]
+            new_age = track.age + 1
+            if new_age <= max_age:
+                updated_tracks[track.track_id] = TrackState(
+                    track_id=track.track_id,
+                    last_bbox=track.last_bbox,
+                    last_seen_frame=track.last_seen_frame,
+                    age=new_age,
+                    hit_count=track.hit_count,
+                )
 
-    return updated_tracks
+        for det_idx in unmatched_dets:
+            detection = frame.detections[det_idx]
+            state = TrackState(
+                track_id=next_track_id,
+                last_bbox=detection.bbox_xyxy,
+                last_seen_frame=frame.frame_idx,
+                age=0,
+                hit_count=1,
+            )
+            updated_tracks[state.track_id] = state
+            tracked_detections.append(
+                TrackedDetection(
+                    track_id=state.track_id,
+                    bbox_xyxy=detection.bbox_xyxy,
+                    confidence=detection.confidence,
+                    class_id=detection.class_id,
+                    class_name=detection.class_name,
+                )
+            )
+            next_track_id += 1
+
+        tracked_detections.sort(key=lambda det: det.track_id)
+        active_tracks = updated_tracks
+        yield TrackedFrame(
+            frame_idx=frame.frame_idx,
+            timestamp=frame.timestamp,
+            detections=tracked_detections,
+        )

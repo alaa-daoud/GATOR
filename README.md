@@ -67,6 +67,13 @@ src/traffic_risk/
 - GPU is optional. The default pipeline should run on CPU, with GPU acceleration used
   only when available and configured.
 
+
+## Tracking limitations (current lightweight baseline)
+
+- Uses simple IoU-based greedy association frame-to-frame (no appearance model).
+- Handles short occlusions by keeping unmatched tracks alive for `max_age` frames.
+- No motion model/Kalman filtering yet, so identity switches may occur in dense scenes.
+
 ## Development workflow
 
 Common commands:
