@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from traffic_risk.perception.detect_yolo import Detection
+from traffic_risk.perception.types import Detection
 
 
 @dataclass(frozen=True)
@@ -16,7 +16,10 @@ class Track:
     age: int = 0
 
 
-def _iou(box_a: tuple[float, float, float, float], box_b: tuple[float, float, float, float]) -> float:
+def _iou(
+    box_a: tuple[float, float, float, float],
+    box_b: tuple[float, float, float, float],
+) -> float:
     """Compute IoU for two xyxy boxes."""
     ax1, ay1, ax2, ay2 = box_a
     bx1, by1, bx2, by2 = box_b
