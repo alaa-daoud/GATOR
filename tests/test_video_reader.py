@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import cv2
-import numpy as np
+import pytest
+
+cv2 = pytest.importorskip("cv2")
+np = pytest.importorskip("numpy")
 
 from traffic_risk.io.video_reader import iter_frames
 

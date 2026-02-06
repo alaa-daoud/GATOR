@@ -4,6 +4,10 @@ from __future__ import annotations
 
 import math
 
+import pytest
+
+pytest.importorskip("pandas")
+
 from traffic_risk.features.extract import extract_features_from_tracked_frames
 from traffic_risk.features.visibility import frame_luminance_bgr
 from traffic_risk.perception.track import TrackedDetection, TrackedFrame
