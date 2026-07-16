@@ -3,7 +3,7 @@ PYTHON ?= python
 .PHONY: install lint format test run clean
 
 install:
-	poetry install --with dev
+	poetry install -E dev -E viz
 
 lint:
 	poetry run ruff check src tests

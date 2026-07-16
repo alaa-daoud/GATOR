@@ -16,13 +16,13 @@ source .venv/bin/activate
 ### 2) Install dependencies (Poetry)
 
 ```bash
-poetry install --with dev
+poetry install -E dev
 ```
 
 Optional visualization extras:
 
 ```bash
-poetry install --with dev --extras "viz"
+poetry install -E dev -E viz
 ```
 
 If Poetry is unavailable, install with pip:
